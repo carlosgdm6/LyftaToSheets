@@ -1,0 +1,11 @@
+
+# Segredos OAuth / token — NUNCA commitar
+credentials.json
+token_store/
+
+# Contém o token do Lyfta — não commitar
+appsettings.json
+
+# Estado de sincronização (local)
+sync_state.json
+publish/

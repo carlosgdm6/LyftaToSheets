@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <header class="app-header">
+        @* data-enhance-nav="false": só há uma rota ("/"), por isso a navegação melhorada do
+           Blazor trata um clique aqui (mesmo URL onde já estamos) como um "não fazer nada".
+           Isto força sempre uma navegação a sério, que reinicia a página no ecrã inicial. *@
+        <a href="/" class="brand brand-btn" title="Página inicial" data-enhance-nav="false">
+            <span class="brand-mark">⚡</span>
+            <span class="brand-name">Lyfta<span class="brand-accent">Sync</span></span>
+        </a>
+    </header>
+
+    <main class="app-main">
+        @Body
+    </main>
+
+    <div class="ambient a1"></div>
+    <div class="ambient a2"></div>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ocorreu um erro inesperado.
+    <a href="." class="reload">Recarregar</a>
+    <span class="dismiss">🗙</span>
+</div>

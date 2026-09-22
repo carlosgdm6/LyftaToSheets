@@ -1,0 +1,17 @@
+C:\Users\Public\LyftaSync\LyftaToSheets.exe
+C:\Users\Public\LyftaSync\appsettings.Development.json
+C:\Users\Public\LyftaSync\appsettings.json
+C:\Users\Public\LyftaSync\credentials.json
+C:\Users\Public\LyftaSync\sync_state.json
+C:\Users\Public\LyftaSync\LyftaToSheets.dll
+C:\Users\Public\LyftaSync\LyftaToSheets.runtimeconfig.json
+C:\Users\Public\LyftaSync\LyftaToSheets.pdb
+C:\Users\Public\LyftaSync\Google.Apis.dll
+C:\Users\Public\LyftaSync\Google.Apis.Auth.dll
+C:\Users\Public\LyftaSync\Google.Apis.Core.dll
+C:\Users\Public\LyftaSync\Google.Apis.Sheets.v4.dll
+C:\Users\Public\LyftaSync\Newtonsoft.Json.dll
+C:\Users\Public\LyftaSync\System.CodeDom.dll
+C:\Users\Public\LyftaSync\System.Management.dll
+C:\Users\Public\LyftaSync\runtimes\win\lib\net7.0\System.Management.dll
+C:\Users\Public\LyftaSync\LyftaToSheets.deps.json
