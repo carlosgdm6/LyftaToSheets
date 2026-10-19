@@ -3,10 +3,10 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace LyftaToSheets.Services;
+namespace LyftaToSheets.Lyfta;
 
 /// <summary>Cliente da API do Lyfta. Obtém os treinos (workouts) do utilizador.</summary>
-public sealed class LyftaClient
+public sealed class LyftaClient : ILyftaClient
 {
     private readonly HttpClient _http;
     private readonly LyftaConfig _config;
@@ -64,40 +64,4 @@ public sealed class LyftaClient
         _log.LogInformation("Lyfta: {Count} treinos no total.", todos.Count);
         return todos;
     }
-}
-
-public sealed class LyftaConfig
-{
-    public string BaseUrl { get; set; } = "https://my.lyfta.app";
-    public string Token { get; set; } = "";
-    public string AuthScheme { get; set; } = "Bearer";
-}
-
-// ---- Modelos da resposta (só os campos que usamos) ----
-
-public sealed class LyftaWorkoutsResponse
-{
-    [JsonPropertyName("total_pages")] public int TotalPages { get; set; }
-    [JsonPropertyName("current_page")] public int CurrentPage { get; set; }
-    public List<LyftaWorkout>? Workouts { get; set; }
-}
-
-public sealed class LyftaWorkout
-{
-    public long Id { get; set; }
-    public string Title { get; set; } = "";
-    [JsonPropertyName("workout_perform_date")] public string WorkoutPerformDate { get; set; } = "";
-    public List<LyftaExercise>? Exercises { get; set; }
-}
-
-public sealed class LyftaExercise
-{
-    [JsonPropertyName("excercise_name")] public string ExerciseName { get; set; } = "";
-    public List<LyftaSet>? Sets { get; set; }
-}
-
-public sealed class LyftaSet
-{
-    public string Weight { get; set; } = "";
-    public string Reps { get; set; } = "";
 }

@@ -1,0 +1,4 @@
+# Build outputs (qualquer projeto no repositório, incluindo LyftaToSheets.Tests)
+[Bb]in/
+[Oo]bj/
+.vs/

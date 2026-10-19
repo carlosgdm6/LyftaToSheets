@@ -7,7 +7,6 @@ public sealed record Exercicio
     public required int Linha { get; init; }          // linha real na folha (1-based)
     public string? RepRange { get; init; }            // coluna G, ex: "1x6-8 + 1x10-12"
     public string? Observacoes { get; init; }         // coluna J
-    public string? ValorAtual { get; init; }          // o que já está na célula da semana escolhida
 }
 
 /// <summary>Um bloco de treino (A/B/C/D) com os seus exercícios.</summary>
@@ -40,6 +39,22 @@ public sealed record TreinoPreview
     public required string Nome { get; init; }             // "TREINO A"
     public required int Semana { get; init; }
     public required string DataLyfta { get; init; }        // data do workout de origem
+    public required long LyftaWorkoutId { get; init; }     // identidade do workout — usado para registar o estado de sincronização após gravar
     public required IReadOnlyList<LinhaPreview> Linhas { get; init; }
     public required IReadOnlyList<string> Avisos { get; init; }
+}
+
+/// <summary>Uma linha da visão geral (um treino) com o preenchimento de cada semana até
+/// à semana atual — para a grelha treino × semana do modal "Visão geral".</summary>
+public sealed record VisaoGeralTreino
+{
+    public required string Nome { get; init; }                     // "TREINO A"
+    public required IReadOnlyList<bool> Preenchida { get; init; }   // índice 0 = semana 1
+}
+
+/// <summary>A folha inteira vista como grelha treino × semana, até à última semana com dados.</summary>
+public sealed record VisaoGeralSheet
+{
+    public required int SemanaAtual { get; init; }  // = nº de colunas a mostrar (última semana com dados; 1 se nenhuma)
+    public required IReadOnlyList<VisaoGeralTreino> Treinos { get; init; }
 }
