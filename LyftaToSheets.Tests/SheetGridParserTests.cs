@@ -90,6 +90,25 @@ public class SheetGridParserTests
     }
 
     [Fact]
+    public void ProximaSemanaVazia_AvancaMuitoAlemDeUmLimiteFixoDeVinteNoveSemanas()
+    {
+        // Regressão do bug real: uma constante fixa de "29 semanas" fazia a app pensar que a
+        // semana 29 (já cheia) era sempre "a próxima livre", mesmo quando a folha já tinha dados
+        // e cabeçalhos muito além disso. Aqui preenchemos 35 semanas (> 29) e confirmamos que a
+        // próxima livre é a 36.ª — nunca fica presa em 29/30 como acontecia antes da correção.
+        var rows = GrelhaComDoisBlocos();
+        var blocos = SheetGridParser.ParseBlocos(rows);
+        var exercicios = blocos[0].Exercicios;
+
+        for (int semana = 1; semana <= 35; semana++)
+            PreencherCelula(rows, exercicios[0].Linha, SheetGridParser.ColunaDaSemana(semana), "3x10(30)");
+
+        var proxima = SheetGridParser.ProximaSemanaVazia(rows, exercicios);
+
+        Assert.Equal(36, proxima);
+    }
+
+    [Fact]
     public void ProximaSemanaVazia_ComTodasAsSemanasPreenchidas_FicaCapadaEmMaxSemanas()
     {
         var rows = GrelhaComDoisBlocos();

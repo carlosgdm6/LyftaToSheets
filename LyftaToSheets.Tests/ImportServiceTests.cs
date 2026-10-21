@@ -90,17 +90,102 @@ public class ImportServiceTests
         var workoutA = WorkoutTreinoA(id: 1, data: "2025-01-02");
         lyfta.Workouts.Add(workoutA);
         lyfta.Workouts.Add(WorkoutTreinoBComExercicioExtra());
-        syncState.Estado["TREINO A"] = new LyftaToSheets.Sync.TreinoSyncState
-        {
-            Treino = "TREINO A",
-            UltimoWorkoutId = workoutA.Id,
-            UltimoWorkoutData = workoutA.WorkoutPerformDate
-        };
+        syncState.Definir("TREINO A", semana: 0, workoutA.Id, workoutA.WorkoutPerformDate);
 
         var previews = await import.GerarPreviewAsync();
 
         Assert.DoesNotContain(previews, p => p.Nome == "TREINO A");
         Assert.Contains(previews, p => p.Nome == "TREINO B");
+    }
+
+    /// <summary>Reproduz o relato real do utilizador: a app tinha escrito corretamente, mas depois a
+    /// célula ficou vazia na folha (ex: apagada à mão sem querer). A memória local continua a dizer
+    /// "já sincronizado" — mas como a folha já não tem os dados, a app tem de propor o treino outra
+    /// vez em vez de confiar cegamente no que acha que já fez.</summary>
+    [Fact]
+    public async Task GerarPreviewAsync_VoltaAProporTreinoSeACelulaRegistadaComoSincronizadaEstiverVaziaNaFolha()
+    {
+        var (import, _, lyfta, syncState) = CriarCenario();
+        var workoutA = WorkoutTreinoA(id: 1, data: "2025-01-02");
+        lyfta.Workouts.Add(workoutA);
+        // Estado diz que este workout já foi escrito na semana 5 — mas a grelha padrão não tem
+        // nada escrito na semana 5 para TREINO A (só a semana 1 do Supino está preenchida).
+        syncState.Definir("TREINO A", semana: 5, workoutA.Id, workoutA.WorkoutPerformDate);
+
+        var previews = await import.GerarPreviewAsync();
+
+        var previewA = Assert.Single(previews, p => p.Nome == "TREINO A");
+        Assert.Equal(1, previewA.LyftaWorkoutId); // continua a ser o mesmo workout — não há nada de novo no Lyfta
+    }
+
+    /// <summary>Contraprova do teste anterior: se a semana registada AINDA tem dados na folha, o
+    /// estado continua a contar como sincronizado — não se propõe o treino outra vez à toa.</summary>
+    [Fact]
+    public async Task GerarPreviewAsync_NaoProposeTreinoSeACelulaRegistadaAindaTemDadosNaFolha()
+    {
+        var (import, _, lyfta, syncState) = CriarCenario();
+        var workoutA = WorkoutTreinoA(id: 1, data: "2025-01-02");
+        lyfta.Workouts.Add(workoutA);
+        // A grelha padrão TEM dados na semana 1 para TREINO A (Supino) — estado aponta exatamente para lá.
+        syncState.Definir("TREINO A", semana: 1, workoutA.Id, workoutA.WorkoutPerformDate);
+
+        var previews = await import.GerarPreviewAsync();
+
+        Assert.DoesNotContain(previews, p => p.Nome == "TREINO A");
+    }
+
+    /// <summary>Reproduz o segundo relato real do utilizador: clicar numa célula já preenchida na
+    /// Visão Geral para a reenviar dava "não encontrei o treino do Lyfta correspondente", mesmo a
+    /// célula tendo dados. Causa: a posição cronológica (PorDiaDeTreino) desalinha sempre que há
+    /// menos dias de Lyfta do que a semana pedida — ex: a folha tem semanas sem workout
+    /// correspondente direto (preenchidas à mão, semanas puladas). Com o histórico exato guardado
+    /// por esta app, o reenvio vai buscar o workout certo por identidade, nunca por posição.</summary>
+    [Fact]
+    public async Task GerarPreviewParaSemanaAsync_UsaIdentidadeDoHistoricoQuandoPosicaoCronologicaNaoChegaLa()
+    {
+        var (import, _, lyfta, syncState) = CriarCenario();
+        var workoutAntigo = WorkoutTreinoA(id: 10, data: "2025-01-01");
+        var workoutRecente = WorkoutTreinoA(id: 20, data: "2025-01-08");
+        lyfta.Workouts.Add(workoutAntigo);
+        lyfta.Workouts.Add(workoutRecente);
+        // Só há 2 dias de TREINO A no Lyfta — por posição cronológica, a semana 31 nunca seria
+        // alcançável (PorDiaDeTreino só tem 2 entradas). O histórico sabe exatamente qual workout
+        // foi escrito lá.
+        syncState.Definir("TREINO A", semana: 31, workoutId: workoutRecente.Id, workoutRecente.WorkoutPerformDate);
+
+        var preview = await import.GerarPreviewParaSemanaAsync("TREINO A", 31);
+
+        Assert.NotNull(preview);
+        Assert.Equal(20, preview!.LyftaWorkoutId);
+        Assert.Equal(31, preview.Semana);
+    }
+
+    /// <summary>Semanas escritas antes de este histórico existir (ou nunca sincronizadas por esta
+    /// app) continuam a funcionar pelo método antigo — melhor esforço por posição cronológica.</summary>
+    [Fact]
+    public async Task GerarPreviewParaSemanaAsync_SemHistorico_UsaPosicaoCronologicaComoRecurso()
+    {
+        var (import, _, lyfta, _) = CriarCenario();
+        var workout1 = WorkoutTreinoA(id: 1, data: "2025-01-02");
+        var workout2 = WorkoutTreinoA(id: 2, data: "2025-01-09");
+        lyfta.Workouts.Add(workout1);
+        lyfta.Workouts.Add(workout2);
+
+        var preview = await import.GerarPreviewParaSemanaAsync("TREINO A", 2);
+
+        Assert.NotNull(preview);
+        Assert.Equal(2, preview!.LyftaWorkoutId); // 2º dia de calendário = workout2
+    }
+
+    [Fact]
+    public async Task GerarPreviewParaSemanaAsync_TreinoNaoExisteNaFolha_DevolveNull()
+    {
+        var (import, _, lyfta, _) = CriarCenario();
+        lyfta.Workouts.Add(WorkoutTreinoA());
+
+        var preview = await import.GerarPreviewParaSemanaAsync("TREINO Z", 1);
+
+        Assert.Null(preview);
     }
 
     [Fact]
@@ -123,6 +208,7 @@ public class ImportServiceTests
         Assert.Equal("TREINO A", registo.treino);
         Assert.Equal(1, registo.workoutId);
         Assert.Equal("2025-01-02", registo.workoutData);
+        Assert.Equal(2, registo.semana);
     }
 
     [Fact]

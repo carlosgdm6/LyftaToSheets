@@ -22,6 +22,12 @@ public sealed record TreinoImport
     public required string Nome { get; init; }
     public required IReadOnlyList<Exercicio> Exercicios { get; init; }
     public required int ProximaSemana { get; init; }
+
+    /// <summary>Se foi pedido para confirmar uma semana específica (a que o estado de sincronização
+    /// guardado diz que já foi escrita), diz se essa célula ainda tem mesmo dados agora — null se
+    /// não foi pedida nenhuma verificação. Permite à app não confiar cegamente na sua própria
+    /// memória: se o utilizador apagar a célula à mão, a próxima sincronização volta a propô-la.</summary>
+    public bool? SemanaVerificadaPreenchida { get; init; }
 }
 
 /// <summary>Uma linha de pré-visualização: o que vai ser escrito numa célula.</summary>

@@ -25,14 +25,42 @@ public sealed class ImportService
     }
 
     /// <summary>Gera uma proposta por treino (A/B/C/D): o workout mais recente do Lyfta que ainda não
-    /// foi sincronizado, colocado na próxima semana livre da folha, com mapeamento por posição.</summary>
+    /// foi sincronizado, colocado na próxima semana livre da folha, com mapeamento por posição.
+    ///
+    /// A memória local (<see cref="ISyncStateStore"/>) nunca é a última palavra: para cada treino que
+    /// ela diz "já sincronizado", a folha é consultada para confirmar se essa célula ainda tem mesmo
+    /// dados. Se o utilizador a apagar à mão (ex: ao corrigir formatação, ou por engano), deixa de
+    /// contar como sincronizado e o treino volta a ser proposto.</summary>
     public async Task<IReadOnlyList<TreinoPreview>> GerarPreviewAsync(CancellationToken ct = default)
     {
         _log.LogInformation("Import: a gerar preview...");
         var workouts = await _lyfta.GetWorkoutsAsync(ct);
-        var estado = await _syncState.CarregarAsync(ct);
-        var candidatos = SyncPlanner.EscolherCandidatos(workouts, estado);
-        var treinosFolha = await _mesociclo.LerParaImportacaoAsync(ct);
+        var historico = await _syncState.CarregarAsync(ct);
+
+        // O histórico guarda uma entrada por (treino, semana) — para decidir "já está sincronizado?"
+        // só interessa a semana mais recente de cada treino.
+        var estadoMaisRecente = historico.Values
+            .GroupBy(r => r.Treino)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Semana).First());
+
+        var semanasAVerificar = estadoMaisRecente
+            .Where(kv => kv.Value.Semana > 0)
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Semana);
+        var treinosFolha = await _mesociclo.LerParaImportacaoAsync(semanasAVerificar, ct);
+
+        var estadoEfetivo = new Dictionary<string, TreinoSyncState>(estadoMaisRecente);
+        foreach (var tf in treinosFolha)
+        {
+            if (tf.SemanaVerificadaPreenchida == false && estadoEfetivo.ContainsKey(tf.Nome))
+            {
+                _log.LogInformation(
+                    "Import: {Treino} estava marcado como sincronizado (semana {Semana}) mas a célula já não tem dados — a propor de novo.",
+                    tf.Nome, estadoMaisRecente[tf.Nome].Semana);
+                estadoEfetivo.Remove(tf.Nome);
+            }
+        }
+
+        var candidatos = SyncPlanner.EscolherCandidatos(workouts, estadoEfetivo);
 
         var previews = new List<TreinoPreview>();
         foreach (var tf in treinosFolha)
@@ -74,13 +102,19 @@ public sealed class ImportService
             preview.Linhas.Where(l => !string.IsNullOrWhiteSpace(l.Valor)).Select(l => (l.Linha, l.Valor)),
             ct);
 
-        await _syncState.RegistarAsync(preview.Nome, preview.LyftaWorkoutId, preview.DataLyfta, ct);
+        await _syncState.RegistarAsync(preview.Nome, preview.LyftaWorkoutId, preview.DataLyfta, preview.Semana, ct);
     }
 
     /// <summary>Gera a proposta para REENVIAR um treino para uma semana já escrita (a partir da "visão
-    /// geral"): a semana N da folha corresponde ao N-ésimo dia de calendário em que esse treino foi
-    /// feito no Lyfta. Ao contrário do sync normal, não consulta o <see cref="ISyncStateStore"/> — um
-    /// pedido de reenvio é sempre para reescrever.</summary>
+    /// geral"). Ao contrário do sync normal, não filtra por já-sincronizado — um pedido de reenvio é
+    /// sempre para reescrever — mas tenta o máximo possível descobrir o workout CERTO:
+    ///
+    /// 1) Se esta app já escreveu essa semana (está no histórico de <see cref="ISyncStateStore"/>),
+    ///    usa a identidade exata desse workout — nunca desalinha, mesmo que a folha tenha semanas sem
+    ///    workout correspondente direto no Lyfta (semanas puladas, preenchidas à mão, etc.).
+    /// 2) Caso contrário (semana escrita antes de este histórico existir, ou nunca sincronizada por
+    ///    esta app), recorre ao melhor esforço de sempre: a semana N corresponde ao N-ésimo dia de
+    ///    calendário em que esse treino foi feito no Lyfta.</summary>
     public async Task<TreinoPreview?> GerarPreviewParaSemanaAsync(string nomeTreino, int semana, CancellationToken ct = default)
     {
         _log.LogInformation("Import: a gerar proposta para reenviar {Treino} (semana {Semana})...", nomeTreino, semana);
@@ -93,14 +127,28 @@ public sealed class ImportService
         }
 
         var workouts = await _lyfta.GetWorkoutsAsync(ct);
-        var porDia = SyncPlanner.PorDiaDeTreino(workouts, nomeTreino);
 
-        if (semana < 1 || semana > porDia.Count)
+        LyftaWorkout? w = null;
+        var historico = await _syncState.CarregarAsync(ct);
+        if (historico.TryGetValue(TreinoSyncState.Chave(nomeTreino, semana), out var registo))
+        {
+            w = workouts.FirstOrDefault(x => x.Id == registo.UltimoWorkoutId);
+            if (w is not null)
+                _log.LogInformation("Import: {Treino} semana {Semana} — workout identificado pelo histórico (id {Id}).", nomeTreino, semana, w.Id);
+        }
+
+        if (w is null)
+        {
+            var porDia = SyncPlanner.PorDiaDeTreino(workouts, nomeTreino);
+            if (semana >= 1 && semana <= porDia.Count)
+                w = porDia[semana - 1];
+        }
+
+        if (w is null)
         {
             _log.LogWarning("Import: sem workout do Lyfta correspondente à semana {Semana} de {Treino}.", semana, nomeTreino);
             return null;
         }
-        var w = porDia[semana - 1];
 
         var (linhas, avisos) = MapearPosicional(tf.Exercicios, w.Exercises);
 

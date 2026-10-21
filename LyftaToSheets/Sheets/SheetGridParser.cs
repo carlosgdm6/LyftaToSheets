@@ -24,7 +24,14 @@ public static class SheetGridParser
     public const int ColRepRange = 6;    // G
     public const int ColObservacoes = 9; // J
     public const int ColSemana1 = 13;    // N (semana 1); cada semana seguinte salta +2 colunas.
-    public const int MaxSemanas = 29;
+
+    /// <summary>Limite de segurança para quantas semanas a app alguma vez procura — bug histórico:
+    /// isto era 29, um valor arbitrário que a folha real já ultrapassou (o mesociclo já vai na
+    /// semana 30+). Uma vez atingido, a app ficava convencida de que a última semana preenchida
+    /// (29, já cheia) era "a próxima livre", e nunca mais avançava — mesmo havendo colunas e
+    /// cabeçalhos "SEMANA 30", "SEMANA 31", etc. já preparados na folha. 200 semanas são quase
+    /// 4 anos de mesociclos semanais; dá para nunca mais pensar nisto.</summary>
+    public const int MaxSemanas = 200;
 
     public static int ColunaDaSemana(int semana) => ColSemana1 + (semana - 1) * 2;
 

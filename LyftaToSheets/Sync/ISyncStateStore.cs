@@ -7,5 +7,5 @@ public interface ISyncStateStore
 {
     Task<IReadOnlyDictionary<string, TreinoSyncState>> CarregarAsync(CancellationToken ct = default);
 
-    Task RegistarAsync(string treino, long workoutId, string workoutData, CancellationToken ct = default);
+    Task RegistarAsync(string treino, long workoutId, string workoutData, int semana, CancellationToken ct = default);
 }

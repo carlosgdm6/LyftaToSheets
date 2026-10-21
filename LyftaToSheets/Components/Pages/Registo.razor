@@ -21,185 +21,138 @@
 </script>
 
 <div class="top-actions">
-    <button class="icon-btn visao-btn" title="Visão geral das semanas" @onclick="AbrirVisaoGeralAsync">▦</button>
-    <button class="icon-btn gear-btn" title="Definições" @onclick="() => _definicoesAbertas = true">⚙</button>
+    <button class="icon-btn visao-btn" title="Visão geral das semanas" @onclick="AbrirVisaoGeralAsync"><i class="fa-solid fa-table-cells"></i></button>
+    <button class="icon-btn gear-btn" title="Definições" @onclick="() => _definicoesAbertas = true"><i class="fa-solid fa-gear"></i></button>
 </div>
 
-@* ============ FLUXO — mantém-se visível do Hero até ao fim da sincronização ============ *@
-@if (_fase is Fase.Hero or Fase.Sync or Fase.Erro)
+@* ============ HERO ============ *@
+@if (_fase == Fase.Hero)
 {
-    @if (_fase is Fase.Sync or Fase.Erro)
-    {
-        <div class="mini-title">⚡ Lyfta<span class="accent">Sync</span></div>
-    }
+    <div class="hero">
+        <h1 class="hero-title"><i class="fa-solid fa-bolt"></i> Lyfta<span class="accent">Sync</span></h1>
+        <p class="hero-flowline">Lyfta <span class="arrow"><i class="fa-solid fa-arrow-right"></i></span> Sheets</p>
 
-    @if (_fase == Fase.Hero)
-    {
-        <div class="hero">
-            <div class="hero-badge"><span class="dot"></span> Sincronização automática</div>
-            <h1 class="hero-title">⚡ Lyfta<span class="accent">Sync</span></h1>
-            <p class="hero-flowline">Lyfta <span class="arrow">→</span> Sheets</p>
-            <p class="hero-sub">Os teus treinos. <strong>Organizados automaticamente.</strong></p>
-
-            <div class="cta-wrap">
-                <button class="cta @(_ocupado ? "loading" : "")" @onclick="IniciarAsync" disabled="@_ocupado">
-                    @if (_ocupado)
-                    {
-                        <span class="cta-spinner"></span>
-                        <span>A ligar…</span>
-                    }
-                    else
-                    {
-                        <span class="ico">@(_temTokenGuardado ? "⚡" : "🔗")</span>
-                        <span>@(_temTokenGuardado ? "Sincronizar" : "Ligar ao Google")</span>
-                    }
-                </button>
-                @if (!_temTokenGuardado && !_ocupado)
+        <div class="cta-wrap">
+            <button class="cta @(_ocupado ? "loading" : "")" @onclick="IniciarAsync" disabled="@_ocupado">
+                @if (_ocupado)
                 {
-                    <span class="cta-hint">Abre a tua conta Google só para escrever na folha do coach.</span>
+                    <span class="cta-spinner"></span>
+                    <span>A ligar…</span>
                 }
-            </div>
-        </div>
-    }
-
-    <div class="flow">
-        <div class="flow-node @NodeClass(0)">
-            <div class="orb">🏋️</div>
-            <div class="label">Lyfta</div>
-            <div class="status">@NodeStatus(0)</div>
-        </div>
-        <div class="flow-connector @ConnectorClass(0)"><div class="fill"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-        <div class="flow-node @NodeClass(1)">
-            <div class="orb">⚡</div>
-            <div class="label">LyftaSync</div>
-            <div class="status">@NodeStatus(1)</div>
-        </div>
-        <div class="flow-connector @ConnectorClass(1)"><div class="fill"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
-        <div class="flow-node @NodeClass(2)">
-            <div class="orb">▦</div>
-            <div class="label">Sheets</div>
-            <div class="status">@NodeStatus(2)</div>
+                else
+                {
+                    <span class="ico">
+                        @if (_temTokenGuardado)
+                        {
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        }
+                        else
+                        {
+                            <i class="fa-brands fa-google"></i>
+                        }
+                    </span>
+                    <span>@(_temTokenGuardado ? "Sincronizar" : "Ligar ao Google")</span>
+                }
+            </button>
+            @if (!_temTokenGuardado && !_ocupado)
+            {
+                <span class="cta-hint">Abre a tua conta Google.</span>
+            }
         </div>
     </div>
 }
 
-@* ============ NARRADOR — os 6 passos da sincronização ============ *@
-@if (_fase == Fase.Sync && _passo is >= 0 and <= 4)
+@* ============ A CARREGAR ============ *@
+@if (_fase == Fase.Carregando)
 {
-    <div class="sync-stage">
-        <div class="steps">
-            @for (int i = 0; i <= 4; i++)
-            {
-                var idx = i;
-                <div class="step @PassoEstado(idx)">
-                    <div class="step-num">@(PassoEstado(idx) == "done" ? "✓" : (idx + 1).ToString("00"))</div>
-                    <div class="step-body">
-                        <div class="step-title">@Passos[idx].titulo</div>
-                        @if (PassoEstado(idx) == "active")
-                        {
-                            <div class="step-detail">@Passos[idx].detalhe</div>
+    <div class="carregando">
+        <div class="cta-spinner grande"></div>
+        <p>A verificar os teus treinos mais recentes…</p>
+    </div>
+}
 
-                            @if (idx == 1 && _chipsExercicios.Count > 0)
-                            {
-                                <div class="chip-field">
-                                    @foreach (var ex in _chipsExercicios)
-                                    {
-                                        <span class="chip">@ex</span>
-                                    }
-                                </div>
-                            }
+@* ============ CONFIRMAÇÃO — mostra o que vai ser escrito antes de escrever ============ *@
+@if (_fase == Fase.Confirmacao)
+{
+    <div class="confirm-stage">
+        @if (_previews is { Count: 0 })
+        {
+            <div class="vazio-card">
+                <span class="vazio-icon"><i class="fa-solid fa-circle-check"></i></span>
+                <h3>Tudo em dia</h3>
+                <p>Não há treinos novos do Lyfta por sincronizar.</p>
+                <button class="btn btn-ghost" @onclick="Voltar">Voltar</button>
+            </div>
+        }
+        else if (_previews is not null)
+        {
+            <h2 class="confirm-title">Pronto para sincronizar @_previews.Count treino@(_previews.Count == 1 ? "" : "s")</h2>
+            <p class="confirm-sub">Confirma antes de escrever na folha do coach.</p>
 
-                            @if (idx == 2 && _previews is not null)
-                            {
-                                <div class="grupo-field">
-                                    @foreach (var p in _previews)
-                                    {
-                                        <span class="grupo-pill">@p.Nome <span class="n">· @p.Linhas.Count ex.</span></span>
-                                    }
-                                </div>
-                            }
-
-                            @if (idx == 3 && _previews is not null)
-                            {
-                                <div class="semanas-field">
-                                    @foreach (var p in _previews)
-                                    {
-                                        <div class="semana-strip">
-                                            @foreach (var par in SemanaStrip(p.Semana))
-                                            {
-                                                <span class="semana-pill @(par.alvo ? "alvo" : "")">S@(par.semana)</span>
-                                                @if (!par.alvo)
-                                                {
-                                                    <span class="semana-arrow">→</span>
-                                                }
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-
-                            @if (idx == 4 && _previews is not null)
-                            {
-                                <div class="sheet-window">
-                                    <div class="sheet-titlebar">
-                                        <span class="tdot"></span><span class="tdot"></span><span class="tdot"></span>
-                                        <span class="tname">MESOCICLO 1 — Google Sheets</span>
-                                    </div>
-                                    @for (int pi = 0; pi < _previews.Count; pi++)
-                                    {
-                                        var p = _previews[pi];
-                                        var ativa = _aGravarIndice == pi;
-                                        var gravado = _gravados.Contains(p.Nome);
-                                        <div class="sheet-group-title">@p.Nome → Semana @p.Semana</div>
-                                        @foreach (var l in p.Linhas)
-                                        {
-                                            <div class="sheet-row @(ativa ? "ativa" : "")">
-                                                <div class="sheet-cell">@l.ExercicioFolha</div>
-                                                <div class="sheet-cell val">
-                                                    @if (gravado || ativa)
-                                                    {
-                                                        <span class="typing">@l.Valor</span>
-                                                    }
-                                                </div>
-                                                <div class="sheet-check">
-                                                    @if (gravado)
-                                                    {
-                                                        <span class="ok">✓</span>
-                                                    }
-                                                    else if (ativa)
-                                                    {
-                                                        <span class="mini-spin"></span>
-                                                    }
-                                                </div>
-                                            </div>
-                                        }
-                                    }
-                                </div>
-                            }
-                        }
+            <div class="preview-list">
+                @foreach (var p in _previews)
+                {
+                    <div class="preview-card">
+                        <PreviewTreinoCard Preview="p" Meta="@($"Treino de {FormatarData(p.DataLyfta)} · {p.Linhas.Count} exercício{(p.Linhas.Count == 1 ? "" : "s")}")" />
                     </div>
+                }
+            </div>
+
+            <div class="confirm-actions">
+                <button class="btn btn-ghost" @onclick="Voltar" disabled="@_ocupado">Cancelar</button>
+                <button class="btn btn-primario" @onclick="ConfirmarEGravarAsync" disabled="@_ocupado">
+                    Confirmar e escrever @_previews.Count treino@(_previews.Count == 1 ? "" : "s")
+                </button>
+            </div>
+        }
+    </div>
+}
+
+@* ============ A GRAVAR ============ *@
+@if (_fase == Fase.AGravar && _previews is not null)
+{
+    <div class="gravar-stage">
+        <h2 class="confirm-title">A escrever na folha…</h2>
+        <div class="preview-list">
+            @foreach (var p in _previews)
+            {
+                var gravado = _gravados.Contains(p.Nome);
+                var ativo = _aGravarNome == p.Nome;
+                <div class="preview-card @(ativo ? "ativo" : "") @(gravado ? "concluido" : "")">
+                    <div class="preview-head">
+                        <span class="preview-nome">@p.Nome</span>
+                        <span class="preview-status">
+                            @if (gravado)
+                            {
+                                <span class="ok-inline"><i class="fa-solid fa-check"></i> gravado</span>
+                            }
+                            else if (ativo)
+                            {
+                                <span class="mini-spin"></span>
+                            }
+                        </span>
+                    </div>
+                    <div class="preview-meta">Semana @p.Semana</div>
                 </div>
             }
         </div>
     </div>
 }
 
-@* ============ SUCESSO ============ *@
-@if (_fase == Fase.Sync && _passo == 5)
+@* ============ CONCLUÍDO ============ *@
+@if (_fase == Fase.Concluido)
 {
     <div class="sucesso">
-        <div class="sucesso-ring"><div class="sucesso-check">✓</div></div>
-        @if (_previews is { Count: 0 })
+        <div class="sucesso-check"><i class="fa-solid fa-check"></i></div>
+        <h2>Está feito.</h2>
+        @if (_previews is { Count: > 0 })
         {
-            <h2>Tudo em dia.</h2>
-            <p>Não havia treinos novos por sincronizar.</p>
-        }
-        else if (_previews is not null)
-        {
-            <h2>Está feito.</h2>
             <p>@_previews.Count treino@(_previews.Count == 1 ? "" : "s") sincronizado@(_previews.Count == 1 ? "" : "s").</p>
             <span class="semana-tag">Semana @_previews.Max(p => p.Semana)</span>
         }
+        <div class="confirm-actions" style="margin-top:22px">
+            <button class="btn btn-primario" @onclick="() => EntrarDashboardAsync(_gravadosNesteSync)">Continuar</button>
+        </div>
     </div>
 }
 
@@ -207,7 +160,7 @@
 @if (_fase == Fase.Erro)
 {
     <div class="erro-card">
-        <div class="erro-ico">⚠</div>
+        <div class="erro-ico"><i class="fa-solid fa-triangle-exclamation"></i></div>
         <h3>Não foi possível sincronizar</h3>
         <p>@_erro</p>
         <button class="btn btn-primario" @onclick="TentarNovamente">Tentar novamente</button>
@@ -219,7 +172,7 @@
 {
     <div class="dash-top">
         <h1>Tudo sincronizado.</h1>
-        <div class="quando"><span class="dot">●</span> Última sincronização · @TempoDesde()</div>
+        <div class="quando"><span class="dot"><i class="fa-solid fa-circle"></i></span> Última sincronização · @TempoDesde()</div>
     </div>
 
     <div class="stat-grid">
@@ -232,7 +185,7 @@
             <div class="stat-label">Semanas preenchidas</div>
         </div>
         <div class="stat-tile">
-            <div class="stat-num check">✓</div>
+            <div class="stat-num check"><i class="fa-solid fa-check"></i></div>
             <div class="stat-label">Google ligado</div>
         </div>
     </div>
@@ -247,14 +200,14 @@
             <div class="kicker">Próxima sincronização</div>
             <h3>Semana @_proximaPrevia.Min(p => p.Semana)</h3>
             <p>@_proximaPrevia.Count treino@(_proximaPrevia.Count == 1 ? "" : "s") pronto@(_proximaPrevia.Count == 1 ? "" : "s")</p>
-            <button class="btn btn-primario" @onclick="SincronizarDeNovoAsync">Sincronizar agora</button>
+            <button class="btn btn-primario" @onclick="VerProximaSincronizacaoAsync">Ver e sincronizar</button>
         }
         else
         {
-            <span class="vazio-icon">✅</span>
+            <span class="vazio-icon"><i class="fa-solid fa-circle-check"></i></span>
             <h3>Tudo em dia</h3>
             <p>Faz o próximo treino no Lyfta e volta aqui.</p>
-            <button class="btn btn-ghost" @onclick="SincronizarDeNovoAsync">Verificar de novo</button>
+            <button class="btn btn-ghost" @onclick="CarregarPreviewAsync">Verificar de novo</button>
         }
     </div>
 }
@@ -262,41 +215,48 @@
 @* ============ DRAWER DE DEFINIÇÕES ============ *@
 <div class="drawer-backdrop @(_definicoesAbertas ? "aberto" : "")" @onclick="() => _definicoesAbertas = false"></div>
 <aside class="drawer @(_definicoesAbertas ? "aberto" : "")">
-    <button class="drawer-close" @onclick="() => _definicoesAbertas = false">✕</button>
-
-    <h3>Ligação ao Google</h3>
-    <div class="drawer-row">
-        <button class="btn btn-ghost" @onclick="TestarGoogleAsync" disabled="@_testandoGoogle">
-            @(_testandoGoogle ? "A testar…" : "Testar ligação")
-        </button>
-        @if (_googleTesteOk == true)
-        {
-            <span class="ok-inline">✓ ligado</span>
-        }
-        @if (_googleTesteOk == false)
-        {
-            <span class="erro-inline">✗ falhou</span>
-        }
+    <div class="drawer-head">
+        <h3 class="drawer-title">Definições</h3>
+        <button class="drawer-close" @onclick="() => _definicoesAbertas = false"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
-    <h3>Token da API do Lyfta</h3>
-    <a class="btn btn-ghost" href="https://my.lyfta.app/community/api" target="_blank" rel="noopener noreferrer">
-        Obter token no Lyfta ↗
-    </a>
-    <input class="token-input" type="text" placeholder="Cola aqui o novo token" @bind="_novoToken" @bind:event="oninput" />
-    <div class="drawer-row" style="margin-top:10px">
-        <button class="btn btn-primario" @onclick="RenovarTokenAsync" disabled="@(_renovandoToken || string.IsNullOrWhiteSpace(_novoToken))">
-            @(_renovandoToken ? "A guardar…" : "Guardar token")
-        </button>
-        @if (_tokenOk == true)
-        {
-            <span class="ok-inline">✓ atualizado</span>
-        }
-        @if (_tokenOk == false)
-        {
-            <span class="erro-inline">✗ falhou</span>
-        }
-    </div>
+    <section class="drawer-section">
+        <h4 class="drawer-section-title">Ligação ao Google</h4>
+        <div class="drawer-field">
+            <button class="btn btn-ghost btn-block" @onclick="TestarGoogleAsync" disabled="@_testandoGoogle">
+                @(_testandoGoogle ? "A testar…" : "Testar ligação")
+            </button>
+            @if (_googleTesteOk == true)
+            {
+                <span class="status-pill ok"><i class="fa-solid fa-check"></i> ligado</span>
+            }
+            @if (_googleTesteOk == false)
+            {
+                <span class="status-pill erro"><i class="fa-solid fa-xmark"></i> falhou</span>
+            }
+        </div>
+    </section>
+
+    <section class="drawer-section">
+        <h4 class="drawer-section-title">Token da API do Lyfta</h4>
+        <a class="btn btn-ghost btn-block" href="https://my.lyfta.app/community/api" target="_blank" rel="noopener noreferrer">
+            Obter token no Lyfta <i class="fa-solid fa-arrow-up-right-from-square"></i>
+        </a>
+        <input class="token-input" type="text" placeholder="Cola aqui o novo token" @bind="_novoToken" @bind:event="oninput" />
+        <div class="drawer-field">
+            <button class="btn btn-primario btn-block" @onclick="RenovarTokenAsync" disabled="@(_renovandoToken || string.IsNullOrWhiteSpace(_novoToken))">
+                @(_renovandoToken ? "A guardar…" : "Guardar token")
+            </button>
+            @if (_tokenOk == true)
+            {
+                <span class="status-pill ok"><i class="fa-solid fa-check"></i> atualizado</span>
+            }
+            @if (_tokenOk == false)
+            {
+                <span class="status-pill erro"><i class="fa-solid fa-xmark"></i> falhou</span>
+            }
+        </div>
+    </section>
 </aside>
 
 @* ============ VISÃO GERAL (treino × semana) ============ *@
@@ -304,7 +264,7 @@
 <div class="visao-modal @(_visaoAberta ? "aberto" : "")">
     <div class="visao-head">
         <h3>Visão geral — todas as semanas</h3>
-        <button class="drawer-close" style="position:static" @onclick="FecharVisaoGeral">✕</button>
+        <button class="drawer-close" style="position:static" @onclick="FecharVisaoGeral"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
     @if (_visaoCarregando)
@@ -326,7 +286,7 @@
                         {
                             var semana = s;
                             var atual = semana == _visaoGeral.SemanaAtual;
-                            <th id="@(atual ? "visao-semana-atual" : null)" class="@(atual ? "atual" : "")">S@semana</th>
+                            <th id="@(atual ? "visao-semana-atual" : null)" class="@(atual ? "atual" : "")">S@(semana)</th>
                         }
                     </tr>
                 </thead>
@@ -343,15 +303,15 @@
                                 <td>
                                     <button class="visao-cell @(preenchida ? "preenchida" : "vazia") @(aResincronizar ? "a-resync" : "")"
                                             disabled="@(!preenchida || _ocupado)"
-                                            title="@(preenchida ? $"Sincronizar {treino.Nome} outra vez (semana {semana})" : "")"
-                                            @onclick="() => ResincronizarAsync(treino.Nome, semana)">
-                                        @if (aResincronizar)
+                                            title="@(preenchida ? $"Rever/reenviar {treino.Nome} (semana {semana})" : "")"
+                                            @onclick="() => PedirResyncAsync(treino.Nome, semana)">
+                                        @if (aResincronizar && _resyncCarregando)
                                         {
                                             <span class="mini-spin"></span>
                                         }
                                         else if (preenchida)
                                         {
-                                            <span>✓</span>
+                                            <span><i class="fa-solid fa-check"></i></span>
                                         }
                                     </button>
                                 </td>
@@ -361,9 +321,22 @@
                 </tbody>
             </table>
         </div>
+
         @if (_resyncErro is not null)
         {
             <p class="erro-inline" style="padding:0 22px 18px">@_resyncErro</p>
+        }
+
+        @if (_resyncPreview is not null)
+        {
+            <div class="resync-confirm">
+                <PreviewTreinoCard Preview="_resyncPreview" MostrarAvisos="false"
+                                   Meta="@($"Vai reescrever com o treino de {FormatarData(_resyncPreview.DataLyfta)}.")" />
+                <div class="confirm-actions">
+                    <button class="btn btn-ghost" @onclick="CancelarResync" disabled="@_ocupado">Cancelar</button>
+                    <button class="btn btn-primario" @onclick="ConfirmarResyncAsync" disabled="@_ocupado">Confirmar reenvio</button>
+                </div>
+            </div>
         }
     }
 </div>

@@ -1,0 +1,39 @@
+@using LyftaToSheets.Models
+
+@* Bloco partilhado "treino + semana + exercícios propostos", usado tanto no ecrã de confirmação
+   do sync normal como no painel de confirmação do reenvio manual (Visão geral) — para os dois
+   nunca derivarem um do outro por engano quando um ganhar uma coluna/aviso novo. *@
+<div class="preview-head">
+    <span class="preview-nome">@Preview.Nome</span>
+    <span class="preview-semana">Semana @Preview.Semana</span>
+</div>
+<div class="preview-meta">@Meta</div>
+
+@if (MostrarAvisos)
+{
+    @foreach (var aviso in Preview.Avisos)
+    {
+        <div class="preview-aviso"><i class="fa-solid fa-triangle-exclamation"></i> @aviso</div>
+    }
+}
+
+<div class="preview-rows">
+    @foreach (var l in Preview.Linhas)
+    {
+        <div class="preview-row">
+            <span class="preview-ex">@l.ExercicioFolha</span>
+            <span class="preview-valor">@l.Valor</span>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public TreinoPreview Preview { get; set; } = null!;
+
+    [Parameter]
+    public string Meta { get; set; } = "";
+
+    [Parameter]
+    public bool MostrarAvisos { get; set; } = true;
+}

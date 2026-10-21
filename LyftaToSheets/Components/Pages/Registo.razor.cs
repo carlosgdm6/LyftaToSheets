@@ -1,3 +1,4 @@
+using System.Globalization;
 using LyftaToSheets.Models;
 using LyftaToSheets.Services;
 using Microsoft.AspNetCore.Components;
@@ -8,30 +9,20 @@ namespace LyftaToSheets.Components.Pages;
 
 public partial class Registo
 {
-    private enum Fase { Hero, Sync, Dashboard, Erro }
-
-    private static readonly (string titulo, string detalhe)[] Passos =
-    [
-        ("A ligar ao Lyfta", "A ir buscar os teus treinos mais recentes."),
-        ("A procurar os teus treinos", "A identificar os exercícios de cada treino."),
-        ("A organizar os dados", "A encaixar os exercícios nos blocos da folha."),
-        ("A procurar uma semana livre", "A folha nunca é sobrescrita — só a próxima semana vazia."),
-        ("A enviar para o Google Sheets", "A escrever os valores, treino a treino."),
-    ];
+    private enum Fase { Hero, Carregando, Confirmacao, AGravar, Concluido, Dashboard, Erro }
 
     private Fase _fase = Fase.Hero;
     private bool _temTokenGuardado;
     private bool _ocupado;
-    private int _passo;
     private string? _erro;
     private IReadOnlyList<TreinoPreview>? _previews;
     private readonly HashSet<string> _gravados = new();
-    private int _aGravarIndice = -1;
-    private List<string> _chipsExercicios = new();
+    private string? _aGravarNome;
 
     private int _treinosSincronizadosSessao;
     private int _semanaMaisAlta;
     private DateTime? _ultimaSincronizacao;
+    private int _gravadosNesteSync;
     private IReadOnlyList<TreinoPreview>? _proximaPrevia;
     private bool _aCarregarProxima;
     private System.Threading.Timer? _relogio;
@@ -49,6 +40,8 @@ public partial class Registo
     private VisaoGeralSheet? _visaoGeral;
     private string? _resyncTreino;
     private int? _resyncSemana;
+    private bool _resyncCarregando;
+    private TreinoPreview? _resyncPreview;
     private string? _resyncErro;
     private bool _focarSemanaPendente;
 
@@ -96,54 +89,6 @@ public partial class Registo
         catch { }
     }
 
-    private string PassoEstado(int i) => i < _passo ? "done" : i == _passo ? "active" : "pending";
-
-    private static IEnumerable<(int semana, bool alvo)> SemanaStrip(int alvo)
-    {
-        int inicio = Math.Max(1, alvo - 2);
-        for (int s = inicio; s <= alvo; s++) yield return (s, s == alvo);
-    }
-
-    private string NodeClass(int idxNode)
-    {
-        if (_fase != Fase.Sync) return "";
-        bool active = idxNode switch
-        {
-            0 => _passo is -1 or 0,
-            1 => _passo is 1 or 2 or 3,
-            2 => _passo == 4,
-            _ => false
-        };
-        bool done = idxNode switch
-        {
-            0 => _passo >= 1,
-            1 => _passo >= 4,
-            2 => _passo >= 5,
-            _ => false
-        };
-        return active ? "active" : done ? "done" : "";
-    }
-
-    private string NodeStatus(int idxNode)
-    {
-        if (_fase != Fase.Sync) return "";
-        return idxNode switch
-        {
-            0 => _passo == -1 ? "" : _passo == 0 ? "a ligar…" : _passo >= 1 ? "treinos encontrados" : "",
-            1 => _passo == -1 ? "a ligar ao Google…" : _passo is 1 or 2 or 3 ? "a processar…" : _passo >= 4 ? "processado" : "",
-            2 => _passo == 4 ? "a escrever…" : _passo >= 5 ? "atualizado" : "",
-            _ => ""
-        };
-    }
-
-    private string ConnectorClass(int idx)
-    {
-        if (_fase != Fase.Sync) return "";
-        bool active = idx == 0 ? _passo == 0 : _passo == 4;
-        bool done = idx == 0 ? _passo >= 1 : _passo >= 5;
-        return active ? "active" : done ? "done" : "";
-    }
-
     private string TempoDesde()
     {
         if (_ultimaSincronizacao is null) return "agora mesmo";
@@ -155,15 +100,19 @@ public partial class Registo
         return $"há {(int)delta.TotalHours} horas";
     }
 
+    /// <summary>"2026-10-21 06:04:14" → "21/10/2026". Se não conseguir interpretar a data,
+    /// mostra o texto tal como veio do Lyfta em vez de rebentar.</summary>
+    private static string FormatarData(string dataLyfta)
+        => DateTime.TryParse(dataLyfta, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d)
+            ? d.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
+            : dataLyfta;
+
     private async Task IniciarAsync()
     {
         if (_ocupado) return;
         _ocupado = true;
         _erro = null;
-        _fase = Fase.Sync;
-        _passo = -1;
         StateHasChanged();
-        await ConsolaAsync("A iniciar sincronização...");
 
         if (!_temTokenGuardado)
         {
@@ -179,70 +128,80 @@ public partial class Registo
                 _erro = "Não foi possível ligar ao Google. " + ex.Message;
                 _fase = Fase.Erro;
                 _ocupado = false;
+                StateHasChanged();
                 return;
             }
         }
 
-        await ExecutarSincronizacaoAsync();
+        await CarregarPreviewAsync();
         _ocupado = false;
     }
 
-    private async Task SincronizarDeNovoAsync()
+    /// <summary>Vai buscar a pré-visualização (o que seria escrito) sem escrever nada — o
+    /// utilizador só vê a confirmação na fase seguinte e decide se avança.</summary>
+    private async Task CarregarPreviewAsync()
     {
-        if (_ocupado) return;
-        _ocupado = true;
-        _fase = Fase.Sync;
-        StateHasChanged();
-        await ExecutarSincronizacaoAsync();
-        _ocupado = false;
-    }
-
-    private async Task ExecutarSincronizacaoAsync()
-    {
-        _passo = 0;
-        _previews = null;
-        _chipsExercicios.Clear();
+        _fase = Fase.Carregando;
         _gravados.Clear();
-        _aGravarIndice = -1;
+        _aGravarNome = null;
         StateHasChanged();
 
-        IReadOnlyList<TreinoPreview> previews;
         try
         {
-            previews = await Import.GerarPreviewAsync();
+            _previews = await Import.GerarPreviewAsync();
+            await ConsolaAsync($"{_previews.Count} proposta(s) de treino geradas.");
+            _fase = Fase.Confirmacao;
         }
         catch (Exception ex)
         {
             await ConsolaErroAsync("Falha ao gerar a pré-visualização", ex);
             _erro = ex.Message;
             _fase = Fase.Erro;
-            return;
         }
-        _previews = previews;
-        await ConsolaAsync($"{previews.Count} proposta(s) de treino geradas.");
+        StateHasChanged();
+    }
 
-        if (previews.Count == 0)
+    private void Voltar()
+    {
+        _previews = null;
+        _fase = FaseDeRetorno();
+    }
+
+    /// <summary>Depois de cancelar ou de um erro, volta ao dashboard se já houve alguma
+    /// sincronização nesta sessão, ou ao ecrã inicial caso contrário.</summary>
+    private Fase FaseDeRetorno() => _ultimaSincronizacao is not null ? Fase.Dashboard : Fase.Hero;
+
+    /// <summary>Reutiliza a pré-visualização que já está carregada no cartão "Próxima
+    /// sincronização" em vez de voltar a pedir a mesma coisa à Lyfta e à Google Sheet.</summary>
+    private async Task VerProximaSincronizacaoAsync()
+    {
+        if (_proximaPrevia is not null)
         {
-            _passo = 5;
+            _previews = _proximaPrevia;
+            _gravados.Clear();
+            _aGravarNome = null;
+            _fase = Fase.Confirmacao;
             StateHasChanged();
-            await Task.Delay(500);
-            await EntrarDashboardAsync(0);
             return;
         }
+        await CarregarPreviewAsync();
+    }
 
-        _chipsExercicios = previews.SelectMany(p => p.Linhas.Select(l => l.ExercicioLyfta)).Distinct().Take(10).ToList();
-        _passo = 1; StateHasChanged(); await Task.Delay(750);
+    /// <summary>Escreve, um treino de cada vez, só depois de o utilizador ter confirmado a
+    /// pré-visualização. Sem atrasos artificiais — cada passo demora exatamente o tempo real
+    /// da escrita no Google Sheets.</summary>
+    private async Task ConfirmarEGravarAsync()
+    {
+        if (_ocupado || _previews is null) return;
+        _ocupado = true;
+        _fase = Fase.AGravar;
+        StateHasChanged();
 
-        _passo = 2; StateHasChanged(); await Task.Delay(700);
-
-        _passo = 3; StateHasChanged(); await Task.Delay(850);
-
-        _passo = 4; StateHasChanged();
         int gravadosAgora = 0;
-        for (int i = 0; i < previews.Count; i++)
+        _gravadosNesteSync = 0;
+        foreach (var p in _previews)
         {
-            var p = previews[i];
-            _aGravarIndice = i;
+            _aGravarNome = p.Nome;
             StateHasChanged();
             try
             {
@@ -250,28 +209,29 @@ public partial class Registo
                 _gravados.Add(p.Nome);
                 _semanaMaisAlta = Math.Max(_semanaMaisAlta, p.Semana);
                 gravadosAgora++;
+                _gravadosNesteSync = gravadosAgora;
                 await ConsolaAsync($"Gravado: {p.Nome} (semana {p.Semana}).");
             }
             catch (Exception ex)
             {
                 await ConsolaErroAsync($"Falha ao gravar {p.Nome}", ex);
-                _aGravarIndice = -1;
+                _aGravarNome = null;
                 _erro = gravadosAgora > 0
-                    ? $"{gravadosAgora} de {previews.Count} treinos foram gravados antes de um erro. {ex.Message}"
+                    ? $"{gravadosAgora} de {_previews.Count} treinos foram gravados antes de um erro. {ex.Message}"
                     : ex.Message;
                 _fase = Fase.Erro;
+                _ocupado = false;
+                StateHasChanged();
                 return;
             }
             StateHasChanged();
-            await Task.Delay(320);
         }
-        _aGravarIndice = -1;
+        _aGravarNome = null;
 
-        _passo = 5;
-        StateHasChanged();
         await ConsolaAsync($"Sincronização concluída: {gravadosAgora} treino(s) gravado(s).");
-        await Task.Delay(1100);
-        await EntrarDashboardAsync(gravadosAgora);
+        _fase = Fase.Concluido;
+        _ocupado = false;
+        StateHasChanged();
     }
 
     private async Task EntrarDashboardAsync(int gravadosAgora)
@@ -296,7 +256,7 @@ public partial class Registo
     private void TentarNovamente()
     {
         _erro = null;
-        _fase = _ultimaSincronizacao is not null ? Fase.Dashboard : Fase.Hero;
+        _fase = FaseDeRetorno();
     }
 
     private async Task TestarGoogleAsync()
@@ -344,7 +304,7 @@ public partial class Registo
         _visaoAberta = true;
         _visaoCarregando = true;
         _visaoErro = null;
-        _resyncErro = null;
+        CancelarResync();
         _visaoGeral = null;
         StateHasChanged();
 
@@ -367,7 +327,11 @@ public partial class Registo
         }
     }
 
-    private void FecharVisaoGeral() => _visaoAberta = false;
+    private void FecharVisaoGeral()
+    {
+        _visaoAberta = false;
+        CancelarResync();
+    }
 
     private static string Letra(string nomeTreino)
     {
@@ -377,41 +341,78 @@ public partial class Registo
             : nomeTreino;
     }
 
-    /// <summary>Reenvia um treino já preenchido, para a semana em que já está — chamado ao clicar
-    /// numa célula verde na visão geral. Vai buscar outra vez o workout do Lyfta que correspondia
-    /// a essa semana e reescreve a célula; não é preciso reabrir a visão geral, a própria grelha
-    /// já mostra o resultado (verde continua verde — só o valor por trás é que é atualizado).</summary>
-    private async Task ResincronizarAsync(string nomeTreino, int semana)
+    /// <summary>Clicar numa célula já preenchida da Visão Geral só pede a pré-visualização do
+    /// reenvio — não escreve nada ainda. A escrita só acontece se o utilizador confirmar a seguir
+    /// em <see cref="ConfirmarResyncAsync"/>.</summary>
+    private async Task PedirResyncAsync(string nomeTreino, int semana)
     {
+        // _ocupado (não só _resyncCarregando) é o que a grelha usa para desativar as células —
+        // sem isto, clicar numa segunda célula antes da primeira pré-visualização chegar fazia as
+        // duas pedirem em paralelo e podia deixar o cartão de confirmação a mostrar o treino/semana
+        // errado (de quem respondesse por último), diferente do que o utilizador clicou mais recente.
         if (_ocupado) return;
         _ocupado = true;
         _resyncTreino = nomeTreino;
         _resyncSemana = semana;
+        _resyncCarregando = true;
         _resyncErro = null;
+        _resyncPreview = null;
         StateHasChanged();
-        await ConsolaAsync($"A ressincronizar {nomeTreino}, semana {semana}...");
 
         try
         {
             var preview = await Import.GerarPreviewParaSemanaAsync(nomeTreino, semana);
             if (preview is null)
-            {
                 _resyncErro = $"Não encontrei o treino do Lyfta correspondente a {nomeTreino}, semana {semana}.";
-            }
             else
-            {
-                await Import.GravarAsync(preview);
-                await ConsolaAsync($"{nomeTreino} (semana {semana}) ressincronizado.");
-            }
+                _resyncPreview = preview;
         }
         catch (Exception ex)
         {
-            Log.LogWarning(ex, "Falha ao ressincronizar {Treino} (semana {Semana}).", nomeTreino, semana);
-            await ConsolaErroAsync($"Falha ao ressincronizar {nomeTreino} (semana {semana})", ex);
+            Log.LogWarning(ex, "Falha ao preparar o reenvio de {Treino} (semana {Semana}).", nomeTreino, semana);
+            await ConsolaErroAsync($"Falha ao preparar o reenvio de {nomeTreino} (semana {semana})", ex);
             _resyncErro = ex.Message;
         }
         finally
         {
+            _resyncCarregando = false;
+            _ocupado = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelarResync()
+    {
+        _resyncPreview = null;
+        _resyncTreino = null;
+        _resyncSemana = null;
+        _resyncErro = null;
+    }
+
+    /// <summary>Escreve o reenvio que o utilizador acabou de confirmar e atualiza a grelha da
+    /// Visão Geral para refletir o resultado.</summary>
+    private async Task ConfirmarResyncAsync()
+    {
+        if (_ocupado || _resyncPreview is null) return;
+        _ocupado = true;
+        StateHasChanged();
+
+        var preview = _resyncPreview;
+        try
+        {
+            await Import.GravarAsync(preview);
+            await ConsolaAsync($"{preview.Nome} (semana {preview.Semana}) ressincronizado.");
+            _visaoGeral = await Mesociclo.LerVisaoGeralAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.LogWarning(ex, "Falha ao ressincronizar {Treino} (semana {Semana}).", preview.Nome, preview.Semana);
+            await ConsolaErroAsync($"Falha ao ressincronizar {preview.Nome} (semana {preview.Semana})", ex);
+            _resyncErro = ex.Message;
+        }
+        finally
+        {
+            _resyncPreview = null;
             _resyncTreino = null;
             _resyncSemana = null;
             _ocupado = false;

@@ -45,8 +45,15 @@ public sealed class MesocicloService
     }
 
     /// <summary>Lê a folha uma vez e devolve, por treino, os exercícios e a próxima semana a preencher
-    /// (= última semana com dados + 1). Não escreve nada.</summary>
-    public async Task<IReadOnlyList<TreinoImport>> LerParaImportacaoAsync(CancellationToken ct = default)
+    /// (= última semana com dados + 1). Não escreve nada.
+    ///
+    /// <paramref name="semanasAVerificar"/> (opcional) pede para também confirmar, por treino, se uma
+    /// semana específica (a que o estado de sincronização local diz que já foi escrita) ainda tem
+    /// mesmo dados agora na folha — ver <see cref="TreinoImport.SemanaVerificadaPreenchida"/>. Usado
+    /// pelo ImportService para nunca confiar cegamente na memória local da app: se o utilizador
+    /// apagar a célula à mão, a próxima sincronização deve voltar a propor esse treino.</summary>
+    public async Task<IReadOnlyList<TreinoImport>> LerParaImportacaoAsync(
+        IReadOnlyDictionary<string, int>? semanasAVerificar = null, CancellationToken ct = default)
     {
         _log.LogInformation("Sheets: a ler a folha...");
         var rows = await _gateway.LerLinhasAsync(ct);
@@ -54,13 +61,34 @@ public sealed class MesocicloService
         _log.LogInformation("Sheets: {Count} linhas lidas, {Blocos} blocos de treino encontrados.", rows.Count, blocos.Count);
 
         var resultado = blocos
-            .Select(b => new TreinoImport
+            .Select(b =>
             {
-                Nome = b.Nome,
-                Exercicios = MapExercicios(b.Exercicios),
-                ProximaSemana = SheetGridParser.ProximaSemanaVazia(rows, b.Exercicios)
+                bool? aindaPreenchida = semanasAVerificar is not null && semanasAVerificar.TryGetValue(b.Nome, out var semana)
+                    ? b.Exercicios.Any(ex => SheetGridParser.ObterValor(rows, ex.Linha, SheetGridParser.ColunaDaSemana(semana)) is not null)
+                    : null;
+
+                return new TreinoImport
+                {
+                    Nome = b.Nome,
+                    Exercicios = MapExercicios(b.Exercicios),
+                    ProximaSemana = SheetGridParser.ProximaSemanaVazia(rows, b.Exercicios),
+                    SemanaVerificadaPreenchida = aindaPreenchida
+                };
             })
             .ToList();
+
+        // O "29" original já tinha sido escolhido sem margem nenhuma, e a folha ultrapassou-o em
+        // silêncio durante meses até a app ficar presa sem ninguém perceber porquê. Desta vez, se
+        // a folha algum dia se aproximar do novo limite de segurança, fica registado um aviso bem
+        // antes disso voltar a acontecer — para falhar alto no log, nunca mais em silêncio na app.
+        foreach (var tf in resultado)
+        {
+            if (tf.ProximaSemana >= SheetGridParser.MaxSemanas - 10)
+                _log.LogWarning(
+                    "Sheets: {Treino} está perto do limite de segurança de semanas ({Proxima}/{Max}) — " +
+                    "a folha vai precisar de mais colunas em breve.",
+                    tf.Nome, tf.ProximaSemana, SheetGridParser.MaxSemanas);
+        }
 
         return resultado;
     }

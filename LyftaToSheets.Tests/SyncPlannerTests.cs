@@ -57,7 +57,7 @@ public class SyncPlannerTests
         // JsonSyncStateStore guardaria.
         var estadoAposRegistar = new Dictionary<string, TreinoSyncState>
         {
-            ["TREINO A"] = new TreinoSyncState { Treino = "TREINO A", UltimoWorkoutId = 200, UltimoWorkoutData = "2025-01-09" }
+            ["TREINO A"] = new TreinoSyncState { Treino = "TREINO A", Semana = 9, UltimoWorkoutId = 200, UltimoWorkoutData = "2025-01-09" }
         };
 
         // 3) Repetindo a escolha com os MESMOS workouts (incluindo o antigo, de conteúdo igual),
